@@ -6,13 +6,15 @@ pub enum ArgParseError {
     MissingValueForOption(String),
     OptionInMiddleOfGroup(String),
     HelpRequested,
+    MissingRequiredArgument(String),
 }
 
 struct Argument {
     pub arg_type: ArgumentKind,
     pub short_name: Option<char>,
     pub long_name: String,
-    pub help: String
+    pub help: String,
+    pub required: bool
 }
 
 enum ArgumentKind {
@@ -32,6 +34,31 @@ pub struct Parser {
     definitions: Vec<Argument>
 }
 
+pub struct ArgumentBuilder<'a> {
+    parser: &'a mut Parser
+}
+
+impl<'a> ArgumentBuilder<'a> {
+    pub fn with_help(self, help_text: &str) -> Self {
+        if let Some(arg) = self.parser.definitions.last_mut() {
+            arg.help = help_text.to_string();
+        }
+        self
+    }
+    pub fn with_short_name(self, short_name: char) -> Self {
+        if let Some(arg) = self.parser.definitions.last_mut() {
+            arg.short_name = Some(short_name);
+        }
+        self
+    }
+    pub fn required(self) -> Self {
+        if let Some(arg) = self.parser.definitions.last_mut() {
+            arg.required = true;
+        }
+        self
+    }
+}
+
 
 impl Parser {
     pub fn new() -> Self {
@@ -43,31 +70,33 @@ impl Parser {
     fn add(
         &mut self,
         long_name: &str,
-        short_name: Option<char>,
         arg_type: ArgumentKind,
-        help: &str,
     ) {
         self.definitions.push(Argument {
             arg_type,
-            short_name,
+            short_name: None,
             long_name: long_name.to_string(),
-            help: help.to_string()
+            help: "".to_string(),
+            required: false
         })
     }
 
     /// Defines a flag argument (e.g., --verbose, -v).
-    pub fn add_flag(&mut self, long_name: &str, short_name: char, help: &str) {
-        self.add(long_name, Some(short_name), ArgumentKind::Flag, help);
+    pub fn add_flag(&mut self, long_name: &str) -> ArgumentBuilder {
+        self.add(long_name, ArgumentKind::Flag);
+        ArgumentBuilder{parser: self}
     }
 
     /// Defines an option argument that takes a value (e.g., --output <file>, -o <file>).
-    pub fn add_option(&mut self, long_name: &str, short_name: char, help: &str) {
-        self.add(long_name, Some(short_name), ArgumentKind::Option, help);
+    pub fn add_option(&mut self, long_name: &str) -> ArgumentBuilder {
+        self.add(long_name, ArgumentKind::Option);
+        ArgumentBuilder{parser: self}
     }
 
     /// Defines a positional argument.
-    pub fn add_positional(&mut self, name: &str, help: &str) {
-        self.add(name, None, ArgumentKind::Positional, help);
+    pub fn add_positional(&mut self, long_name: &str) -> ArgumentBuilder {
+        self.add(long_name, ArgumentKind::Positional);
+        ArgumentBuilder{parser: self}
     }
     
     pub fn generate_help(&self) -> String {
@@ -157,7 +186,7 @@ impl Parser {
                                     if i == count - 1 {
                                         Self::extract_option(&mut args, &mut results, def)?;
                                     } else {
-                                        Err(ArgParseError::OptionInMiddleOfGroup(def.long_name.clone()))?;
+                                        return Err(ArgParseError::OptionInMiddleOfGroup(def.long_name.clone()));
                                     }
                                     break; // last option in the group, exit the loop.
                                 }
@@ -175,7 +204,26 @@ impl Parser {
             }
         }
 
+        // validate any required parameters
+        self.validate_args(&results)?;
         Ok(results)
+    }
+
+    fn validate_args(&self, results: &ParsedArgs) -> Result<(), ArgParseError> {
+        for def in &self.definitions {
+            if def.required {
+                let was_provided = match def.arg_type {
+                    ArgumentKind::Flag => results.flags.contains(&def.long_name),
+                    ArgumentKind::Option => results.options.contains_key(&def.long_name),
+                    ArgumentKind::Positional => !results.positional.is_empty(),
+                };
+
+                if !was_provided {
+                    return Err(ArgParseError::MissingRequiredArgument(def.long_name.clone()));
+                }
+            }
+        }
+        Ok(())
     }
 
     fn extract_option<T: Iterator<Item=String>>(args: &mut T, results: &mut ParsedArgs, x: &Argument) -> Result<(), ArgParseError> {
@@ -203,7 +251,9 @@ mod tests {
     #[test]
     fn test_long_flag() {
         let mut parser = Parser::new();
-        parser.add_flag("verbose", 'v', "increases the verbosity");
+        parser.add_flag("verbose")
+            .with_short_name('v')
+            .with_help("increases the verbosity");
         let result = parser.parse(to_args(vec!["program", "--verbose"])).unwrap();
         assert!(result.flags.contains("verbose"));
     }
@@ -211,7 +261,9 @@ mod tests {
     #[test]
     fn test_long_option() {
         let mut parser = Parser::new();
-        parser.add_option("output", 'o', "where the output should be stored");
+        parser.add_option("output")
+            .with_short_name('o')
+            .with_help("where the output should be stored");
         let result = parser.parse(to_args(vec!["program", "--output", "file.txt"])).unwrap();
         assert_eq!(result.options.get("output"), Some(&"file.txt".to_string()));
     }
@@ -219,8 +271,12 @@ mod tests {
     #[test]
     fn test_short_combined_flags() {
         let mut parser = Parser::new();
-        parser.add_flag("verbose", 'v', "increased the verbosity");
-        parser.add_flag("all", 'a', "foobar");
+        parser.add_flag("verbose")
+            .with_short_name('v')
+            .with_help("increased the verbosity");
+        parser.add_flag("all")
+            .with_short_name('a')
+            .with_help("foobar");
         let result = parser.parse(to_args(vec!["program", "-av"])).unwrap();
         assert!(result.flags.contains("verbose"));
         assert!(result.flags.contains("all"));
@@ -229,8 +285,12 @@ mod tests {
     #[test]
     fn test_short_option_with_value() {
         let mut parser = Parser::new();
-        parser.add_option("output", 'o', "foobaz");
-        parser.add_flag("verbose", 'v', "foobarbaz");
+        parser.add_option("output")
+            .with_short_name('o')
+            .with_help("foobaz");
+        parser.add_flag("verbose")
+            .with_short_name('v')
+            .with_help("foobarbaz");
         let result = parser.parse(to_args(vec!["program", "-vo", "file.txt"])).unwrap();
         assert!(result.flags.contains("verbose"));
         assert_eq!(result.options.get("output"), Some(&"file.txt".to_string()));
@@ -239,7 +299,8 @@ mod tests {
     #[test]
     fn test_positional_argument() {
         let mut parser = Parser::new();
-        parser.add_positional("input_file", "positional");
+        parser.add_positional("input_file")
+            .with_help("positional");
         let result = parser.parse(to_args(vec!["program", "data.csv"])).unwrap();
         assert_eq!(result.positional, vec!["data.csv"]);
     }
@@ -247,9 +308,14 @@ mod tests {
     #[test]
     fn test_mixed_arguments() {
         let mut parser = Parser::new();
-        parser.add_flag("verbose", 'v', "verbose city");
-        parser.add_option("output", 'o', "output city");
-        parser.add_positional("input", "positional city");
+        parser.add_flag("verbose")
+            .with_short_name('v')
+            .with_help("verbose city");
+        parser.add_option("output")
+            .with_short_name('o')
+            .with_help("output city");
+        parser.add_positional("input")
+            .with_help("positional city");
         let result = parser.parse(to_args(vec!["program", "-v", "the_input.txt", "--output", "out.log"])).unwrap();
         assert!(result.flags.contains("verbose"));
         assert_eq!(result.positional, vec!["the_input.txt"]);
@@ -273,7 +339,9 @@ mod tests {
     #[test]
     fn test_err_missing_value_for_option() {
         let mut parser = Parser::new();
-        parser.add_option("output", 'o', "test");
+        parser.add_option("output")
+            .with_short_name('o')
+            .with_help("test");
         let result = parser.parse(to_args(vec!["program", "--output"]));
         assert!(matches!(result, Err(ArgParseError::MissingValueForOption(_))));
     }
@@ -281,8 +349,12 @@ mod tests {
     #[test]
     fn test_err_option_in_middle_of_group() {
         let mut parser = Parser::new();
-        parser.add_option("output", 'o', "test");
-        parser.add_flag("verbose", 'v', "test2");
+        parser.add_option("output")
+            .with_short_name('o')
+            .with_help("test");
+        parser.add_flag("verbose")
+            .with_short_name('v')
+            .with_help("test2");
         let result = parser.parse(to_args(vec!["program", "-ov", "file.txt"]));
         assert!(matches!(result, Err(ArgParseError::OptionInMiddleOfGroup(_))));
     }
@@ -290,7 +362,9 @@ mod tests {
     #[test]
     fn test_help_flag_returns_help_requested_error() {
         let mut parser = Parser::new();
-        parser.add_flag("verbose", 'v', "Enable verbose output.");
+        parser.add_flag("verbose")
+            .with_short_name('v')
+            .with_help("Enable verbose output.");
 
         // Test long form --help
         let long_args = to_args(vec!["program", "--help"]);
@@ -306,9 +380,14 @@ mod tests {
     #[test]
     fn test_generate_help_message_formatting() {
         let mut parser = Parser::new();
-        parser.add_flag("all", 'a', "List all items.");
-        parser.add_option("output", 'o', "Specify output file.");
-        parser.add_positional("input", "The input file to process.");
+        parser.add_flag("all")
+            .with_short_name('a')
+            .with_help("List all items.");
+        parser.add_option("output")
+            .with_short_name('o')
+            .with_help("Specify output file.");
+        parser.add_positional("input")
+            .with_help("The input file to process.");
 
         let help_text = parser.generate_help();
 
@@ -322,7 +401,22 @@ Options:
 Arguments:
   input                  The input file to process.
 "#;
-
         assert_eq!(help_text, expected_text);
+    }
+
+    #[test]
+    fn test_required_option_is_present() {
+        let mut parser = Parser::new();
+        parser.add_option("output").required();
+        let result = parser.parse(to_args(vec!["program", "--output", "file.txt"]));
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_err_missing_required_option() {
+        let mut parser = Parser::new();
+        parser.add_option("output").required();
+        let result = parser.parse(to_args(vec!["program"]));
+        assert!(matches!(result, Err(ArgParseError::MissingRequiredArgument(_))));
     }
 }

@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::str::FromStr;
 
 #[derive(Debug, PartialEq)]
 pub enum ArgParseError {
@@ -28,6 +29,13 @@ pub struct ParsedArgs {
     pub flags: HashSet<String>,
     pub options: HashMap<String, String>,
     pub positional: Vec<String>
+}
+
+impl ParsedArgs {
+    pub fn get_value_as<T: FromStr>(&self, name: &str) -> Option<Result<T, T::Err>> {
+        let option = self.options.get(name)?;
+        Some(option.parse::<T>())
+    }
 }
 
 pub struct Parser {
@@ -122,8 +130,6 @@ impl Parser {
         
         help
     }
-    
-    
     
     fn parse<T: Iterator<Item = String>>(&self, mut args: T) -> Result<ParsedArgs, ArgParseError> {
         let mut results = ParsedArgs {
@@ -418,5 +424,34 @@ Arguments:
         parser.add_option("output").required();
         let result = parser.parse(to_args(vec!["program"]));
         assert!(matches!(result, Err(ArgParseError::MissingRequiredArgument(_))));
+    }
+
+    #[test]
+    fn test_get_value_as() {
+        
+        let mut options = HashMap::new();
+        options.insert("port".to_string(), "8080".to_string());
+        options.insert("rate".to_string(), "hello".to_string());
+
+        let parsed_args = ParsedArgs {
+            flags: HashSet::new(),
+            options,
+            positional: vec![],
+        };
+
+        // 2. Test Success case: Valid key and valid parse
+        let port = parsed_args.get_value_as::<u32>("port").unwrap().unwrap();
+        assert_eq!(port, 8080);
+
+        // 3. Test Failure case: Valid key but invalid parse
+        let rate_result = parsed_args.get_value_as::<f64>("rate");
+        // We expect Some(Err(...))
+        assert!(rate_result.is_some());
+        assert!(rate_result.unwrap().is_err());
+
+        // 4. Test Absence case: Key does not exist
+        let missing_result = parsed_args.get_value_as::<i32>("missing");
+        // We expect None
+        assert!(missing_result.is_none());
     }
 }

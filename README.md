@@ -13,7 +13,7 @@ Add this line to your `Cargo.toml` file:
 
 ```toml
 [dependencies]
-sarpa = "0.1.0" # Replace with your crate name and version
+sarpa = "0.1.0"
 ```
 
 ### Quick Start

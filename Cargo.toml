@@ -4,6 +4,6 @@ version = "0.1.0"
 edition = "2021"
 description = "A simple command-line argument parser with a builder API"
 license = "MIT"
-repository = "https://github.com/KostasDas/sarpa" # Update this to your repo URL
+repository = "https://github.com/KostasDas/sarpa"
 keywords = ["cli", "arguments", "parser", "args"]
 categories = ["command-line-interface"]

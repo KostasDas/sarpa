@@ -5,6 +5,7 @@
 //! converted to any type that implements FromStr
 
 use std::collections::{HashMap, HashSet};
+use std::fmt::{Display, Formatter};
 use std::str::FromStr;
 
 /// Represents all possible errors that can occur during parsing.
@@ -20,6 +21,28 @@ pub enum ArgParseError {
     HelpRequested,
     /// A required argument was not provided.
     MissingRequiredArgument(String),
+}
+
+impl Display for ArgParseError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ArgParseError::UnknownArgument(arg) => {
+                write!(f, "unknown argument: '{}'", arg)
+            }
+            ArgParseError::MissingValueForOption(arg) => {
+                write!(f, "missing value for option: '{}'", arg)
+            }
+            ArgParseError::OptionInMiddleOfGroup(arg) => {
+                write!(f, "Option '{}' cannot be in the middle of the group", arg)
+            }
+            ArgParseError::HelpRequested => { 
+                Ok(())
+            }
+            ArgParseError::MissingRequiredArgument(arg) => {
+                write!(f, "missing required argument '{}'", arg)
+            }
+        }
+    }
 }
 
 struct Argument {
@@ -162,7 +185,12 @@ impl Parser {
 
     /// Generates a formatted help message string based on the defined arguments.
     pub fn generate_help(&self) -> String {
-        let mut help = String::from("Usage: [PROGRAM_NAME] [OPTIONS] [ARGUMENTS]\n");
+
+        let name = env!("CARGO_PKG_NAME");
+        let version = env!("CARGO_PKG_VERSION");
+
+        let mut help = format!("{} {}\n", name, version);
+        help.push_str(&format!("Usage: {} [OPTIONS] [ARGUMENTS]\n", name));
         help.push_str("\nOptions:\n");
 
         for def in &self.definitions {

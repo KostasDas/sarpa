@@ -13,7 +13,7 @@ Add this line to your `Cargo.toml` file:
 
 ```toml
 [dependencies]
-sarpa = "0.1.0"
+sarpa = "0.1.1"
 ```
 
 ### Quick Start
@@ -71,8 +71,8 @@ fn main() {
                     println!("{}", parser.generate_help());
                 }
                 _ => {
-                    // Print any other parsing error
-                    eprintln!("Error: {}", e); // Changed to eprintln! for errors
+                    // Handle any other errors
+                    eprintln!("Error: {}", e);
                     std::process::exit(1);
                 }
             }

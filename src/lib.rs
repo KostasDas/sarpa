@@ -1,12 +1,24 @@
+//! A simple command-line argument parsing library.
+//!
+//! This library provides a builder pattern API to define arguments
+//! and a parser to process them from the command line. The parsed arguments can be
+//! converted to any type that implements FromStr
+
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 
+/// Represents all possible errors that can occur during parsing.
 #[derive(Debug, PartialEq)]
 pub enum ArgParseError {
+    /// An unknown argument was provided (e.g., `--foo`).
     UnknownArgument(String),
+    /// An option was provided without its required value (e.g., `--output`).
     MissingValueForOption(String),
+    /// An option was incorrectly placed in a group of short flags (e.g., `-ovf`).
     OptionInMiddleOfGroup(String),
+    /// The user requested the help message (e.g., `--help`).
     HelpRequested,
+    /// A required argument was not provided.
     MissingRequiredArgument(String),
 }
 
@@ -24,41 +36,75 @@ enum ArgumentKind {
     Positional
 }
 
+
+/// Represents a set of parsed arguments.
+///
+/// You get this struct back after a successful call to `Parser::parse()`.
 #[derive(Debug)]
 pub struct ParsedArgs {
+    /// A set of all flags that were present.
     pub flags: HashSet<String>,
+    /// A map of all options and their string values.
     pub options: HashMap<String, String>,
+    /// A vector of all positional arguments in the order they appeared.
     pub positional: Vec<String>
 }
 
 impl ParsedArgs {
+    /// Gets and parses the value of an option into a specific type.
+    ///
+    /// This method attempts to find an option by its name and then parse its
+    /// string value into any type `T` that implements `FromStr`.
+    ///
+    /// # Returns
+    ///
+    /// * `None`: If the option was not provided by the user.
+    /// * `Some(Ok(value))`: If the option was found and successfully parsed.
+    /// * `Some(Err(error))`: If the option was found but parsing failed.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// // Assuming `results` is a ParsedArgs
+    /// // let port = results.get_value_as::<u32>("port");
+    /// ```
     pub fn get_value_as<T: FromStr>(&self, name: &str) -> Option<Result<T, T::Err>> {
         let option = self.options.get(name)?;
         Some(option.parse::<T>())
     }
 }
 
+/// The main parser object used to define arguments and run the parser.
 pub struct Parser {
     definitions: Vec<Argument>
 }
 
+/// A temporary builder object for configuring arguments.
+///
+/// This struct is returned by `Parser::add_flag`, `add_option`, and `add_positional`
+/// and allows for chaining configuration methods like `.with_short_name()` or `.required()`.
 pub struct ArgumentBuilder<'a> {
     parser: &'a mut Parser
 }
 
 impl<'a> ArgumentBuilder<'a> {
+    /// Adds a help message to the argument.
     pub fn with_help(self, help_text: &str) -> Self {
         if let Some(arg) = self.parser.definitions.last_mut() {
             arg.help = help_text.to_string();
         }
         self
     }
+    /// Adds a short name (e.g., '-s') to the argument.
     pub fn with_short_name(self, short_name: char) -> Self {
         if let Some(arg) = self.parser.definitions.last_mut() {
             arg.short_name = Some(short_name);
         }
         self
     }
+    /// Marks the argument as required.
+    ///
+    /// The parser will return an error if this argument is not provided.
     pub fn required(self) -> Self {
         if let Some(arg) = self.parser.definitions.last_mut() {
             arg.required = true;
@@ -69,12 +115,13 @@ impl<'a> ArgumentBuilder<'a> {
 
 
 impl Parser {
+    /// Creates a new, empty parser.
     pub fn new() -> Self {
         Parser {
             definitions: Vec::new()
         }
     }
-    
+
     fn add(
         &mut self,
         long_name: &str,
@@ -90,23 +137,30 @@ impl Parser {
     }
 
     /// Defines a flag argument (e.g., --verbose, -v).
+    ///
+    /// Returns an `ArgumentBuilder` to add optional configurations.
     pub fn add_flag(&mut self, long_name: &str) -> ArgumentBuilder {
         self.add(long_name, ArgumentKind::Flag);
         ArgumentBuilder{parser: self}
     }
 
-    /// Defines an option argument that takes a value (e.g., --output <file>, -o <file>).
+    /// Defines an option argument that takes a value (e.g., --output <file>).
+    ///
+    /// Returns an `ArgumentBuilder` to add optional configurations.
     pub fn add_option(&mut self, long_name: &str) -> ArgumentBuilder {
         self.add(long_name, ArgumentKind::Option);
         ArgumentBuilder{parser: self}
     }
 
-    /// Defines a positional argument.
+    /// Defines a positional argument (e.g., <input-file>).
+    ///
+    /// Returns an `ArgumentBuilder` to add optional configurations.
     pub fn add_positional(&mut self, long_name: &str) -> ArgumentBuilder {
         self.add(long_name, ArgumentKind::Positional);
         ArgumentBuilder{parser: self}
     }
-    
+
+    /// Generates a formatted help message string based on the defined arguments.
     pub fn generate_help(&self) -> String {
         let mut help = String::from("Usage: [PROGRAM_NAME] [OPTIONS] [ARGUMENTS]\n");
         help.push_str("\nOptions:\n");
@@ -120,18 +174,26 @@ impl Parser {
                 help.push_str(&format!("  {}{:<20} {}\n", short, def.long_name, def.help))
             }
         }
-        
+
         help.push_str("\nArguments:\n");
         for def in &self.definitions {
             if let ArgumentKind::Positional = def.arg_type {
                 help.push_str(&format!("  {:<22} {}\n", def.long_name, def.help))
             }
         }
-        
+
         help
     }
-    
-    fn parse<T: Iterator<Item = String>>(&self, mut args: T) -> Result<ParsedArgs, ArgParseError> {
+
+    /// Parses a given iterator of string arguments.
+    ///
+    /// This is the main entry point for the parser.
+    ///
+    /// # Errors
+    ///
+    /// Returns an `ArgParseError` variant if parsing fails, if `--help` is requested,
+    /// or if a required argument is missing.
+    pub fn parse<T: Iterator<Item = String>>(&self, mut args: T) -> Result<ParsedArgs, ArgParseError> {
         let mut results = ParsedArgs {
             flags: HashSet::new(),
             options: HashMap::new(),
@@ -170,7 +232,7 @@ impl Parser {
                         }
                     }
                 }
-                
+
 
             } else if let Some(arg_without_prefix) = arg.strip_prefix("-") {
                 let count = arg_without_prefix.chars().count();
@@ -250,7 +312,7 @@ mod tests {
     use super::*;
 
     // Helper function to make creating argument lists for tests easier.
-    fn to_args(args: Vec<&str>) -> impl Iterator<Item = String> {
+    fn to_args(args: Vec<&str>) -> impl Iterator<Item = String> + use<'_> {
         args.into_iter().map(|s| s.to_string())
     }
 
@@ -428,7 +490,7 @@ Arguments:
 
     #[test]
     fn test_get_value_as() {
-        
+
         let mut options = HashMap::new();
         options.insert("port".to_string(), "8080".to_string());
         options.insert("rate".to_string(), "hello".to_string());

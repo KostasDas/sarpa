@@ -1,4 +1,4 @@
-# My Argument Parser
+# Simple Argument Parser
 
 [![Crates.io](https://img.shields.io/crates/v/my-arg-parser.svg)](https://crates.io/crates/my-arg-parser)
 [![Docs.rs](https://docs.rs/my-arg-parser/badge.svg)](https://docs.rs/my-arg-parser)

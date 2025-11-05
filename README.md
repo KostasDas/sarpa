@@ -1,7 +1,7 @@
 # Simple Argument Parser
 
-[![Crates.io](https://img.shields.io/crates/v/my-arg-parser.svg)](https://crates.io/crates/my-arg-parser)
-[![Docs.rs](https://docs.rs/my-arg-parser/badge.svg)](https://docs.rs/my-arg-parser)
+[![Crates.io](https://img.shields.io/crates/v/sarpa.svg)](https://crates.io/crates/sarpa)
+[![Docs.rs](https://docs.rs/sarpa/badge.svg)](https://docs.rs/sarpa)
 
 A simple and robust command-line argument parsing library for Rust.
 
@@ -13,7 +13,7 @@ Add this line to your `Cargo.toml` file:
 
 ```toml
 [dependencies]
-sarpa = "0.1.1"
+sarpa = "0.1.2"
 ```
 
 ### Quick Start
